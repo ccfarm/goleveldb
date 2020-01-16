@@ -12,10 +12,10 @@ import (
 	"os"
 	"sync"
 
-	"github.com/syndtr/goleveldb/leveldb/errors"
-	"github.com/syndtr/goleveldb/leveldb/journal"
-	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/syndtr/goleveldb/leveldb/storage"
+	"github.com/ccfarm/goleveldb/leveldb/errors"
+	"github.com/ccfarm/goleveldb/leveldb/journal"
+	"github.com/ccfarm/goleveldb/leveldb/opt"
+	"github.com/ccfarm/goleveldb/leveldb/storage"
 )
 
 // ErrManifestCorrupted records manifest corruption. This error will be

@@ -20,11 +20,11 @@ import (
 	"time"
 
 	"github.com/syndtr/goleveldb/leveldb"
-	"github.com/syndtr/goleveldb/leveldb/errors"
-	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/syndtr/goleveldb/leveldb/storage"
-	"github.com/syndtr/goleveldb/leveldb/table"
-	"github.com/syndtr/goleveldb/leveldb/util"
+	"github.com/ccfarm/goleveldb/leveldb/errors"
+	"github.com/ccfarm/goleveldb/leveldb/opt"
+	"github.com/ccfarm/goleveldb/leveldb/storage"
+	"github.com/ccfarm/goleveldb/leveldb/table"
+	"github.com/ccfarm/goleveldb/leveldb/util"
 )
 
 var (

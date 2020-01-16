@@ -9,9 +9,9 @@ package leveldb
 import (
 	"sync/atomic"
 
-	"github.com/syndtr/goleveldb/leveldb/iterator"
-	"github.com/syndtr/goleveldb/leveldb/memdb"
-	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/ccfarm/goleveldb/leveldb/iterator"
+	"github.com/ccfarm/goleveldb/leveldb/memdb"
+	"github.com/ccfarm/goleveldb/leveldb/opt"
 )
 
 const (

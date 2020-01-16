@@ -11,8 +11,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/syndtr/goleveldb/leveldb/journal"
-	"github.com/syndtr/goleveldb/leveldb/storage"
+	"github.com/ccfarm/goleveldb/leveldb/journal"
+	"github.com/ccfarm/goleveldb/leveldb/storage"
 )
 
 // Logging.
