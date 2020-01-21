@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	pathpkg "path"
 	"runtime"
 	"strings"
 	"sync"
@@ -174,8 +175,8 @@ func openDB(s *session) (*DB, error) {
 //
 // The returned DB instance is safe for concurrent use.
 // The DB must be closed after use, by calling Close method.
-func Open(stor storage.Storage, o *opt.Options) (db *DB, err error) {
-	s, err := newSession(stor, o)
+func Open(stor storage.Storage, vStore *vStorage, o *opt.Options) (db *DB, err error) {
+	s, err := newSession(stor, vStore, o)
 	if err != nil {
 		return
 	}
@@ -218,11 +219,15 @@ func Open(stor storage.Storage, o *opt.Options) (db *DB, err error) {
 // The returned DB instance is safe for concurrent use.
 // The DB must be closed after use, by calling Close method.
 func OpenFile(path string, o *opt.Options) (db *DB, err error) {
-	stor, err := storage.OpenFile(path, o.GetReadOnly())
+	kPath := pathpkg.Join(path, "key")
+	stor, err := storage.OpenFile(kPath, o.GetReadOnly())
+	vPath := pathpkg.Join(path, "value")
+	vStore := OpenStore(vPath)
 	if err != nil {
 		return
 	}
-	db, err = Open(stor, o)
+	db, err = Open(stor, vStore, o)
+	vStore.SetKeyStore(db)
 	if err != nil {
 		stor.Close()
 	} else {
@@ -238,24 +243,25 @@ func OpenFile(path string, o *opt.Options) (db *DB, err error) {
 //
 // The returned DB instance is safe for concurrent use.
 // The DB must be closed after use, by calling Close method.
-func Recover(stor storage.Storage, o *opt.Options) (db *DB, err error) {
-	s, err := newSession(stor, o)
-	if err != nil {
-		return
-	}
-	defer func() {
-		if err != nil {
-			s.close()
-			s.release()
-		}
-	}()
 
-	err = recoverTable(s, o)
-	if err != nil {
-		return
-	}
-	return openDB(s)
-}
+//func Recover(stor storage.vStorage, o *opt.Options) (db *DB, err error) {
+//	s, err := newSession(stor, o)
+//	if err != nil {
+//		return
+//	}
+//	defer func() {
+//		if err != nil {
+//			s.close()
+//			s.release()
+//		}
+//	}()
+//
+//	err = recoverTable(s, o)
+//	if err != nil {
+//		return
+//	}
+//	return openDB(s)
+//}
 
 // RecoverFile recovers and opens a DB with missing or corrupted manifest files
 // for the given path. It will ignore any manifest files, valid or not.
@@ -267,19 +273,21 @@ func Recover(stor storage.Storage, o *opt.Options) (db *DB, err error) {
 //
 // The returned DB instance is safe for concurrent use.
 // The DB must be closed after use, by calling Close method.
-func RecoverFile(path string, o *opt.Options) (db *DB, err error) {
-	stor, err := storage.OpenFile(path, false)
-	if err != nil {
-		return
-	}
-	db, err = Recover(stor, o)
-	if err != nil {
-		stor.Close()
-	} else {
-		db.closer = stor
-	}
-	return
-}
+
+
+//func RecoverFile(path string, o *opt.Options) (db *DB, err error) {
+//	stor, err := storage.OpenFile(path, false)
+//	if err != nil {
+//		return
+//	}
+//	db, err = Recover(stor, o)
+//	if err != nil {
+//		stor.Close()
+//	} else {
+//		db.closer = stor
+//	}
+//	return
+//}
 
 func recoverTable(s *session, o *opt.Options) error {
 	o = dupOptions(o)
@@ -848,7 +856,8 @@ func (db *DB) Get(key []byte, ro *opt.ReadOptions) (value []byte, err error) {
 
 	se := db.acquireSnapshot()
 	defer db.releaseSnapshot(se)
-	return db.get(nil, nil, key, se.seq, ro)
+	location, err := db.get(nil, nil, key, se.seq, ro)
+	return db.s.vStore.Get(location), err
 }
 
 // Has returns true if the DB does contains the given key.
@@ -1140,6 +1149,7 @@ func (db *DB) SizeOf(ranges []util.Range) (Sizes, error) {
 // It is valid to call Close multiple times. Other methods should not be
 // called after the DB has been closed.
 func (db *DB) Close() error {
+	db.s.vStore.Close()
 	if !db.setClosed() {
 		return ErrClosed
 	}

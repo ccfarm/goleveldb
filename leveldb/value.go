@@ -1,11 +1,10 @@
-package value
+package leveldb
 
 import (
 	"bufio"
 	"encoding/binary"
 	"fmt"
 	"github.com/ccfarm/fasterleveldb/dbutil"
-	"github.com/ccfarm/goleveldb/leveldb"
 	"io"
 	"os"
 	"path"
@@ -15,13 +14,13 @@ import (
 )
 
 const (
-	Capacity    = 16 * 1024 * 1024
-	MANIFEST = "MANIFEST"
-	LEVEL = 64
-	MANIFESTSIZE = LEVEL * 3 * 4 + 20
-	MAXSIZE = 16 * 1024 * 1024 * 1024
-	WARNINGLINE = MAXSIZE / 10 * 8
-	SAFELINE = MAXSIZE / 10 * 6
+	Capacity     = 512 * 1024 * 1024
+	Manifest     = "Manifest"
+	LEVEL        = 64
+	ManifestSize = LEVEL * 3 * 4 + 20
+	MaxSize      = 16 * 1024 * 1024 * 1024
+	WarningLine  = MaxSize / 10 * 8
+	SafeLine     = MaxSize / 10 * 6
 )
 
 type Level struct {
@@ -30,7 +29,7 @@ type Level struct {
 	Offset int
 }
 
-type Store struct {
+type vStorage struct {
 	Path              string
 	Size              int64
 	CurrentFileNumber int
@@ -40,11 +39,11 @@ type Store struct {
 	Mutex             *sync.Mutex
 	Level             []Level
 	Compacting        bool
-	KeyStore          *leveldb.DB
+	KeyStore          *DB
 }
 
-func OpenStore(valuePath string) *Store {
-	manifestPath := path.Join(valuePath, MANIFEST)
+func OpenStore(valuePath string) *vStorage {
+	manifestPath := path.Join(valuePath, Manifest)
 	if dbutil.FileExists(manifestPath) {
 		return loadStore(valuePath)
 	} else {
@@ -52,17 +51,20 @@ func OpenStore(valuePath string) *Store {
 	}
 }
 
-func loadStore(valuePath string) *Store {
-	manifestPath := path.Join(valuePath, MANIFEST)
+func loadStore(valuePath string) *vStorage {
+	manifestPath := path.Join(valuePath, Manifest)
 	manifestFile, _ := os.OpenFile(manifestPath, os.O_RDONLY, os.ModePerm)
-	bufferSize := MANIFESTSIZE
+	bufferSize := ManifestSize
 	buffer := make([]byte, bufferSize)
-	manifestFile.Read(buffer)
+	reader := bufio.NewReader(manifestFile)
+	io.ReadFull(reader, buffer)
+	manifestFile.Close()
+	//manifestFile.Read(buffer)
 	sequence := int(binary.BigEndian.Uint32(buffer[0:]))
 	size := binary.BigEndian.Uint64(buffer[4:])
 	currentFileNumber := int(binary.BigEndian.Uint32(buffer[12:]))
 	offset := int(binary.BigEndian.Uint32(buffer[16:]))
-	vs := &Store{
+	vs := &vStorage{
 		Path:              valuePath,
 		Size:              int64(size),
 		CurrentFileNumber: currentFileNumber,
@@ -71,6 +73,8 @@ func loadStore(valuePath string) *Store {
 		Mutex:             &sync.Mutex{},
 		Level:make([]Level, LEVEL),
 	}
+	filename := vs.generateFilename(0, vs.CurrentFileNumber)
+	vs.CurrentFile, _ = os.OpenFile(filename, os.O_CREATE | os.O_RDWR, os.ModePerm)
 	for i := 0; i < LEVEL; i++ {
 		vs.Level[i].Start = int(binary.BigEndian.Uint32(buffer[20 + i * 12:]))
 		vs.Level[i].End = int(binary.BigEndian.Uint32(buffer[20 + i * 12 + 4:]))
@@ -79,8 +83,8 @@ func loadStore(valuePath string) *Store {
 	return vs
 }
 
-func newStore(valuePath string) *Store {
-	vs := &Store{
+func newStore(valuePath string) *vStorage {
+	vs := &vStorage{
 		Path:              valuePath,
 		Size:              1,
 		CurrentFileNumber: 0,
@@ -92,11 +96,11 @@ func newStore(valuePath string) *Store {
 	os.MkdirAll(valuePath, os.ModePerm)
 	filename := vs.generateFilename(0, vs.CurrentFileNumber)
 	vs.CurrentFile, _ = os.OpenFile(filename, os.O_CREATE | os.O_RDWR, os.ModePerm)
-	fmt.Println(filename)
+	//fmt.Println(filename)
 	return vs
 }
 
-func (vs *Store)Put(key []byte, value []byte) (location []byte) {
+func (vs *vStorage)Put(key []byte, value []byte) (location []byte) {
 	l := len(key) + len(value) + 16
 	buffer := make([]byte, l)
 	binary.BigEndian.PutUint32(buffer[0: ], uint32(l))
@@ -123,7 +127,7 @@ func (vs *Store)Put(key []byte, value []byte) (location []byte) {
 
 	size := atomic.AddInt64(&vs.Size, int64(l))
 	if !vs.Compacting {
-		if size > WARNINGLINE {
+		if size > WarningLine {
 			vs.Compacting = true
 			go vs.compact()
 		}
@@ -132,7 +136,7 @@ func (vs *Store)Put(key []byte, value []byte) (location []byte) {
 	return location
 }
 
-func (vs *Store)Get(location []byte) (value []byte) {
+func (vs *vStorage)Get(location []byte) (value []byte) {
 	length, fileNumber, offset, _ , level:= parseLocation(location)
 	//fmt.Println(length, fileNumber, offset, seq, level)
 	buffer := make([]byte, length)
@@ -166,16 +170,16 @@ func parseLocation(location []byte) (length int, fileNumber int, offset int, seq
 	return
 }
 
-func (vs *Store)generateFilename(level int, fileNumber int) string{
-	filename := path.Join(vs.Path, "level_" + strconv.Itoa(level) + "_number_" + strconv.Itoa(fileNumber))
+func (vs *vStorage)generateFilename(level int, fileNumber int) string{
+	filename := path.Join(vs.Path, "level_" + strconv.Itoa(level) + "_number_" + strconv.Itoa(fileNumber) + ".value")
 	return filename
 }
 
-func (vs *Store)Close() () {
+func (vs *vStorage)Close() () {
 	vs.CurrentFile.Close()
-	manifestPath := path.Join(vs.Path, MANIFEST)
+	manifestPath := path.Join(vs.Path, Manifest)
 	manifestFile, _ := os.OpenFile(manifestPath, os.O_CREATE | os.O_RDWR, os.ModePerm)
-	bufferSize := MANIFESTSIZE
+	bufferSize := ManifestSize
 	buffer := make([]byte, bufferSize)
 	binary.BigEndian.PutUint32(buffer[0:], uint32(vs.Sequence))
 	binary.BigEndian.PutUint64(buffer[4:], uint64(vs.Size))
@@ -191,7 +195,7 @@ func (vs *Store)Close() () {
 	return
 }
 
-func (vs *Store)compact() {
+func (vs *vStorage)compact() {
 
 	lengthBytes := make([]byte, 4)
 	for {
@@ -228,8 +232,10 @@ func (vs *Store)compact() {
 					//fmt.Println(string(key))
 					//value := buffer[16 + keySize: 16 + keySize + valueSize]
 					//fmt.Println(string(key))
-					//fmt.Println(string(value))
-					location, err:= vs.KeyStore.Get(key, nil)
+					//fmt.Println(keySize)
+					se := vs.KeyStore.acquireSnapshot()
+					location, err := vs.KeyStore.get(nil, nil, key, se.seq, nil)
+					vs.KeyStore.releaseSnapshot(se)
 					if err != nil {
 						vs.Mutex.Lock()
 						vs.Size -= int64(length)
@@ -252,7 +258,8 @@ func (vs *Store)compact() {
 							vs.Mutex.Unlock()
 							location := generateLocation(int(length), vs.Level[i + 1].End, vs.Level[i + 1].Offset, seq, i + 1)
 							//fmt.Println(length, vs.Level[i + 1].End, vs.Level[i + 1].Offset, seq, i + 1)
-							vs.KeyStore.Put(key, location, nil)
+							//vs.KeyStore.Put(key, location, nil)
+							vs.KeyStore.putRec(keyTypeVal, key, location, nil)
 							vs.Level[i + 1].Offset += int(length)
 							if vs.Level[i + 1].Offset >= Capacity {
 								vs.Level[i + 1].Offset = 0
@@ -274,7 +281,7 @@ func (vs *Store)compact() {
 					fmt.Println(err)
 				}
 				vs.Level[i].Start += 1
-				if vs.Size < SAFELINE {
+				if vs.Size < SafeLine {
 					vs.Compacting = false
 					return
 				}
@@ -285,6 +292,6 @@ func (vs *Store)compact() {
 
 }
 
-func (vs *Store)SetKeyStore(keyStore *leveldb.DB) {
+func (vs *vStorage)SetKeyStore(keyStore *DB) {
 	vs.KeyStore = keyStore
 }

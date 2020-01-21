@@ -228,10 +228,10 @@ func (db *DB) writeLocked(batch, ourBatch *Batch, merge, sync bool) error {
 	seq := db.seq + 1
 
 	// Write journal.
-	if err := db.writeJournal(batches, seq, sync); err != nil {
-		db.unlockWrite(overflow, merged, err)
-		return err
-	}
+	//if err := db.writeJournal(batches, seq, sync); err != nil {
+	//	db.unlockWrite(overflow, merged, err)
+	//	return err
+	//}
 
 	// Put batches.
 	for _, batch := range batches {
@@ -369,7 +369,8 @@ func (db *DB) putRec(kt keyType, key, value []byte, wo *opt.WriteOptions) error 
 // It is safe to modify the contents of the arguments after Put returns but not
 // before.
 func (db *DB) Put(key, value []byte, wo *opt.WriteOptions) error {
-	return db.putRec(keyTypeVal, key, value, wo)
+	location := db.s.vStore.Put(key, value)
+	return db.putRec(keyTypeVal, key, location, wo)
 }
 
 // Delete deletes the value for the given key. Delete will not returns error if

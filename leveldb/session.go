@@ -48,6 +48,8 @@ type session struct {
 	icmp     *iComparer
 	tops     *tOps
 
+	vStore *vStorage
+
 	manifest       *journal.Writer
 	manifestWriter storage.Writer
 	manifestFd     storage.FileDesc
@@ -68,7 +70,7 @@ type session struct {
 }
 
 // Creates new initialized session instance.
-func newSession(stor storage.Storage, o *opt.Options) (s *session, err error) {
+func newSession(stor storage.Storage, vStore *vStorage, o *opt.Options) (s *session, err error) {
 	if stor == nil {
 		return nil, os.ErrInvalid
 	}
@@ -78,6 +80,7 @@ func newSession(stor storage.Storage, o *opt.Options) (s *session, err error) {
 	}
 	s = &session{
 		stor:      newIStorage(stor),
+		vStore: vStore,
 		storLock:  storLock,
 		refCh:     make(chan *vTask),
 		relCh:     make(chan *vTask),
